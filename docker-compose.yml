@@ -49,6 +49,17 @@ services:
       - "./go-qlc-test-3:/root/.gqlcchain_test"
     restart: unless-stopped
 
+  #Miner node which connected to qlcchain_node3
+  qlcchain_miner1:
+    image: qlcchain/qlc-miner:latest
+    container_name: qlcchain_miner1
+    command: ["-nodeurl=http://10.0.0.22:19735","-miner=qlc_3du37ycreqgse861rcx8qkkpscdttc99ro834zhwuftrtmhbnidnmrkyz4xr","-auxpow"]
+    networks:
+         qlcchain:
+            ipv4_address: 10.0.0.30
+    volumes:
+      - "./qlc-miner-1:/root/.qlcminer"
+    restart: unless-stopped
     
 networks:
    qlcchain:
