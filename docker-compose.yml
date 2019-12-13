@@ -53,12 +53,12 @@ services:
   qlcchain_miner1:
     image: qlcchain/qlc-miner:latest
     container_name: qlcchain_miner1
-    command: ["-nodeurl=http://10.0.0.22:19735","-miner=qlc_3du37ycreqgse861rcx8qkkpscdttc99ro834zhwuftrtmhbnidnmrkyz4xr","-auxpow"]
+    command: ["-nodeurl=http://10.0.0.22:19735","-miner=qlc_3du37ycreqgse861rcx8qkkpscdttc99ro834zhwuftrtmhbnidnmrkyz4xr","-auxpow","-algo=SCRYPT"]
     networks:
          qlcchain:
             ipv4_address: 10.0.0.30
     volumes:
-      - "./qlc-miner-1:/root/.qlcminer"
+      - "./qlc-miner-test-1:/root/.qlcminer"
     restart: unless-stopped
     
 networks:
