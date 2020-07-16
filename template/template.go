@@ -1,3 +1,6 @@
+package template
+
+var templateStr = `
 version: "3.5"
 
 services:
@@ -39,3 +42,4 @@ networks:
       ipam:
          config:
          - subnet: 10.0.0.0/16
+`

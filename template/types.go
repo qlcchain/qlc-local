@@ -27,5 +27,6 @@ type QlcNode struct {
 }
 
 type PtmNode struct {
-	Url string
+	Url           string
+	ContainerName string
 }

@@ -29,14 +29,22 @@ import (
 //	logger              *zap.SugaredLogger
 //}
 
-func Template(dir string, nodeCount, repCount, ptmCount int) ([]QlcNode, []PtmNode, error) {
-	tmpl, err := template.ParseFiles("template.tmpl")
+// Create docker-compose.yml file by parameters
+// Parameters:
+// - dir: directory of docker-compose.yml to be created
+// - nodeCount: number of qlc nodes to run
+// - repCount: number of representation nodes to run
+// - ptmCount: number of ptm nodes to run
+// - qlcVersion: docker image version of qlc, if set "", default is "latest"
+// - ptmVersion: docker image version of ptm, if set "", default is "latest"
+func Template(dir string, nodeCount, repCount, ptmCount int, qlcVersion, ptmVersion string) ([]QlcNode, []PtmNode, error) {
+	tmpl, err := template.New("template").Parse(templateStr)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	qlcParams, qlcNodes := initNodes(nodeCount)
-	ptmParams, ptmNodes := initPTMs(ptmCount)
+	qlcParams, qlcNodes := initNodes(nodeCount, qlcVersion)
+	ptmParams, ptmNodes := initPTMs(ptmCount, ptmVersion)
 	data := map[string]interface{}{
 		"Nodes": qlcParams,
 		"Ptms":  ptmParams,
@@ -54,7 +62,7 @@ func Template(dir string, nodeCount, repCount, ptmCount int) ([]QlcNode, []PtmNo
 	return qlcNodes, ptmNodes, nil
 }
 
-func initPTMs(count int) ([]PTMParam, []PtmNode) {
+func initPTMs(count int, ptmVersion string) ([]PTMParam, []PtmNode) {
 	params := make([]PTMParam, 0)
 	nodes := make([]PtmNode, 0)
 	if count == 0 {
@@ -64,11 +72,15 @@ func initPTMs(count int) ([]PTMParam, []PtmNode) {
 	port1Index := 9181
 	port2Index := 9183
 	ipv4Address := 20
-	image := "qlcchain/ptm:0.10.5"
+	if ptmVersion == "" {
+		ptmVersion = "latest"
+	}
+	image := fmt.Sprintf("qlcchain/ptm:%s", ptmVersion)
+	containerName := fmt.Sprintf("ptm_node%d", nodeIndex)
 	param1 := PTMParam{
-		Name:          fmt.Sprintf("ptm_node%d", nodeIndex),
+		Name:          containerName,
 		Image:         image,
-		ContainerName: fmt.Sprintf("ptm_node%d", nodeIndex),
+		ContainerName: containerName,
 		Command:       commond(true, nodeIndex, port1Index, port2Index, ipv4Address),
 		Port1:         fmt.Sprintf("%d:%d", port1Index, port1Index),
 		Port2:         fmt.Sprintf("%d:%d", port2Index, port2Index),
@@ -77,16 +89,18 @@ func initPTMs(count int) ([]PTMParam, []PtmNode) {
 	}
 	params = append(params, param1)
 	node1 := PtmNode{
-		Url: fmt.Sprintf("http://127.0.0.1:%d", port2Index),
+		Url:           fmt.Sprintf("http://127.0.0.1:%d", port2Index),
+		ContainerName: containerName,
 	}
 	nodes = append(nodes, node1)
 	for i := 1; i < count; i++ {
 		port1Indext := port1Index + 100*i
 		port2Indext := port2Index + 100*i
+		containerName := fmt.Sprintf("ptm_node%d", nodeIndex+i)
 		paramt := PTMParam{
-			Name:          fmt.Sprintf("ptm_node%d", nodeIndex+i),
+			Name:          containerName,
 			Image:         image,
-			ContainerName: fmt.Sprintf("ptm_node%d", nodeIndex+i),
+			ContainerName: containerName,
 			Command:       commond(false, nodeIndex+i, port1Indext, port2Indext, ipv4Address+i),
 			Port1:         fmt.Sprintf("%d:%d", port1Indext, port1Indext),
 			Port2:         fmt.Sprintf("%d:%d", port2Indext, port2Indext),
@@ -95,7 +109,8 @@ func initPTMs(count int) ([]PTMParam, []PtmNode) {
 		}
 		params = append(params, paramt)
 		nodet := PtmNode{
-			Url: fmt.Sprintf("http://127.0.0.1:%d", port2Indext),
+			Url:           fmt.Sprintf("http://127.0.0.1:%d", port2Indext),
+			ContainerName: containerName,
 		}
 		nodes = append(nodes, nodet)
 	}
@@ -126,7 +141,7 @@ func commond(first bool, index int, port1Index, port2Index, ipv4Address int) str
 	return "[\"" + strings.Join(coms, "\",\"") + "\"]"
 }
 
-func initNodes(count int) ([]NodeParam, []QlcNode) {
+func initNodes(count int, qlcVesion string) ([]NodeParam, []QlcNode) {
 	params := make([]NodeParam, 0)
 	nodes := make([]QlcNode, 0)
 	if count == 0 {
@@ -138,7 +153,10 @@ func initNodes(count int) ([]NodeParam, []QlcNode) {
 	portWsIndex := 19036
 	portBootNodeIndex := 19037
 	ipv4Address := 10
-	image := "qlcchain/go-qlc-test:latest"
+	if qlcVesion == "" {
+		qlcVesion = "latest"
+	}
+	image := fmt.Sprintf("qlcchain/go-qlc-test:%s", qlcVesion)
 	bootparam := NodeParam{
 		Name:          fmt.Sprintf("qlcchain_node%d", nodeIndex),
 		Image:         image,
