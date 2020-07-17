@@ -60,7 +60,7 @@ services:
     volumes:
       - "./qlc-miner-test-1:/root/.qlcminer"
     restart: unless-stopped
-    
+
 networks:
    qlcchain:
       ipam:
