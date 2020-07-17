@@ -3,14 +3,18 @@ package template
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	ic "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/qlcchain/qlc-go-sdk/pkg/types"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 )
 
 //type Node struct {
@@ -43,8 +47,12 @@ func Template(dir string, nodeCount, repCount, ptmCount int, qlcVersion, ptmVers
 		return nil, nil, err
 	}
 
-	qlcParams, qlcNodes := initNodes(nodeCount, qlcVersion)
-	ptmParams, ptmNodes := initPTMs(ptmCount, ptmVersion)
+	ptmParams := initPTMs(ptmCount, ptmVersion)
+	ptmUrls := make([]string, 0)
+	for _, n := range ptmParams {
+		ptmUrls = append(ptmUrls, n.cEndpoint)
+	}
+	qlcParams := initNodes(nodeCount, repCount, qlcVersion, ptmUrls)
 	data := map[string]interface{}{
 		"Nodes": qlcParams,
 		"Ptms":  ptmParams,
@@ -59,62 +67,53 @@ func Template(dir string, nodeCount, repCount, ptmCount int, qlcVersion, ptmVers
 		return nil, nil, err
 	}
 	fmt.Println(writer.String())
-	return qlcNodes, ptmNodes, nil
+	return toQLCNodes(qlcParams), toPTMNodes(ptmParams), nil
 }
 
-func initPTMs(count int, ptmVersion string) ([]PTMParam, []PtmNode) {
-	params := make([]PTMParam, 0)
-	nodes := make([]PtmNode, 0)
+func initPTMs(count int, ptmVersion string) []PtmParam {
+	params := make([]PtmParam, 0)
 	if count == 0 {
-		return params, nodes
+		return params
 	}
-	nodeIndex := 1
+	nodeIndex := generateNum()
 	port1Index := 9181
 	port2Index := 9183
-	ipv4Address := 20
+	ipv4Address := 21
 	if ptmVersion == "" {
 		ptmVersion = "latest"
 	}
 	image := fmt.Sprintf("qlcchain/ptm:%s", ptmVersion)
 	containerName := fmt.Sprintf("ptm_node%d", nodeIndex)
-	param1 := PTMParam{
+	param1 := PtmParam{
 		Name:          containerName,
 		Image:         image,
 		ContainerName: containerName,
 		Command:       commond(true, nodeIndex, port1Index, port2Index, ipv4Address),
 		Port1:         fmt.Sprintf("%d:%d", port1Index, port1Index),
 		Port2:         fmt.Sprintf("%d:%d", port2Index, port2Index),
+		cEndpoint:     fmt.Sprintf("http://10.0.0.%d:%d", ipv4Address, port2Index),
 		Ipv4Address:   fmt.Sprintf("10.0.0.%d", ipv4Address),
 		Volumes:       fmt.Sprintf("./qlcptm-%d:/home/qlcptm%d/", nodeIndex, nodeIndex),
 	}
 	params = append(params, param1)
-	node1 := PtmNode{
-		Url:           fmt.Sprintf("http://127.0.0.1:%d", port2Index),
-		ContainerName: containerName,
-	}
-	nodes = append(nodes, node1)
 	for i := 1; i < count; i++ {
 		port1Indext := port1Index + 100*i
 		port2Indext := port2Index + 100*i
 		containerName := fmt.Sprintf("ptm_node%d", nodeIndex+i)
-		paramt := PTMParam{
+		paramt := PtmParam{
 			Name:          containerName,
 			Image:         image,
 			ContainerName: containerName,
 			Command:       commond(false, nodeIndex+i, port1Indext, port2Indext, ipv4Address+i),
 			Port1:         fmt.Sprintf("%d:%d", port1Indext, port1Indext),
 			Port2:         fmt.Sprintf("%d:%d", port2Indext, port2Indext),
+			cEndpoint:     fmt.Sprintf("http://10.0.0.%d:%d", ipv4Address+i, port2Indext),
 			Ipv4Address:   fmt.Sprintf("10.0.0.%d", ipv4Address+i),
 			Volumes:       fmt.Sprintf("./qlcptm-%d:/home/qlcptm%d/", nodeIndex+i, nodeIndex+i),
 		}
 		params = append(params, paramt)
-		nodet := PtmNode{
-			Url:           fmt.Sprintf("http://127.0.0.1:%d", port2Indext),
-			ContainerName: containerName,
-		}
-		nodes = append(nodes, nodet)
 	}
-	return params, nodes
+	return params
 }
 
 func commond(first bool, index int, port1Index, port2Index, ipv4Address int) string {
@@ -141,13 +140,12 @@ func commond(first bool, index int, port1Index, port2Index, ipv4Address int) str
 	return "[\"" + strings.Join(coms, "\",\"") + "\"]"
 }
 
-func initNodes(count int, qlcVesion string) ([]NodeParam, []QlcNode) {
+func initNodes(count, repCount int, qlcVesion string, ptmUrls []string) []NodeParam {
 	params := make([]NodeParam, 0)
-	nodes := make([]QlcNode, 0)
 	if count == 0 {
-		return params, nodes
+		return params
 	}
-	nodeIndex := 1
+	nodeIndex := generateNum()
 	portP2PIndex := 19034
 	portHttpIndex := 19035
 	portWsIndex := 19036
@@ -156,50 +154,72 @@ func initNodes(count int, qlcVesion string) ([]NodeParam, []QlcNode) {
 	if qlcVesion == "" {
 		qlcVesion = "latest"
 	}
+	ptmUrl := ""
+	if len(ptmUrls) > 0 {
+		ptmUrl = ptmUrls[0]
+	}
+	seed := "46b31acd0a3bf072e7bea611a86074e7afae5ff95610f5f870208f2fd9357418"
 	image := fmt.Sprintf("qlcchain/go-qlc-test:%s", qlcVesion)
 	bootparam := NodeParam{
 		Name:          fmt.Sprintf("qlcchain_node%d", nodeIndex),
 		Image:         image,
 		ContainerName: fmt.Sprintf("qlcchain_node%d", nodeIndex),
-		Command:       command(true, portBootNodeIndex, portP2PIndex),
+		Command:       command(true, portBootNodeIndex, portP2PIndex, ptmUrl, seed),
 		PortP2P:       portStr(portP2PIndex, 19734),
 		PortHttp:      portStr(portHttpIndex, 19735),
 		PortWs:        portStr(portWsIndex, 19736),
 		Ipv4Address:   fmt.Sprintf("10.0.0.%d", ipv4Address),
 		Volumes:       fmt.Sprintf("./go-qlc-test-%d:/qlcchain/.gqlcchain_test", nodeIndex),
+		accountSeed:   seed,
 	}
 	params = append(params, bootparam)
 	if count > 1 {
 		for i := 1; i < count; i++ {
+			ptmUrlt := ""
+			if len(ptmUrls) > i {
+				ptmUrlt = ptmUrls[i]
+			}
+			seed := ""
+			if repCount > i {
+				seedNew, _ := types.NewSeed()
+				seed = hex.EncodeToString(seedNew[:])
+			}
 			paramt := NodeParam{
 				Name:          fmt.Sprintf("qlcchain_node%d", nodeIndex+i),
 				Image:         image,
 				ContainerName: fmt.Sprintf("qlcchain_node%d", nodeIndex+i),
-				Command:       command(false, portBootNodeIndex+100*i, portP2PIndex+100*i),
+				Command:       command(false, portBootNodeIndex+100*i, portP2PIndex+100*i, ptmUrlt, seed),
 				PortP2P:       portStr(portP2PIndex+100*i, 19734),
 				PortHttp:      portStr(portHttpIndex+100*i, 19735),
 				PortWs:        portStr(portWsIndex+100*i, 19736),
 				Ipv4Address:   fmt.Sprintf("10.0.0.%d", ipv4Address+i),
 				Volumes:       fmt.Sprintf("./go-qlc-test-%d:/root/.gqlcchain_test", nodeIndex+i),
+				accountSeed:   seed,
 			}
 			params = append(params, paramt)
 		}
 	}
-	return params, nodes
+	return params
 }
 
 func portStr(port int, origin int) string {
 	return fmt.Sprintf("%s:%s", strconv.Itoa(port), strconv.Itoa(origin))
 }
 
-func command(isBootNode bool, portBootNode, p2pPort int) string {
+func command(isBootNode bool, portBootNode, p2pPort int, ptmUrl string, seed string) string {
 	coms := make([]string, 0)
 	key, id, _ := identityConfig()
-	configParams := fmt.Sprintf("--configParams=logLevel=info;rpc.rpcEnabled=true;p2p.isBootNode=%s;p2p.bootNode=['http://127.0.0.1:%d/bootNode'];p2p.bootNodeHttpServer=0.0.0.0:%d;p2p.listen=/ip4/0.0.0.0/tcp/%d;p2p.identity.peerId=%s;p2p.identity.privateKey=%s",
-		strconv.FormatBool(isBootNode), portBootNode, portBootNode, p2pPort, id, key)
-	coms = append(coms, configParams)
-	if isBootNode {
-		seed := "--seed=46b31acd0a3bf072e7bea611a86074e7afae5ff95610f5f870208f2fd9357418"
+	configParams := "--configParams=logLevel=info;rpc.rpcEnabled=true;p2p.isBootNode=%s;p2p.bootNode=['http://127.0.0.1:%d/bootNode'];p2p.bootNodeHttpServer=0.0.0.0:%d;p2p.listen=/ip4/0.0.0.0/tcp/%d;p2p.identity.peerId=%s;p2p.identity.privateKey=%s"
+	if ptmUrl == "" {
+		configParams := fmt.Sprintf(configParams, strconv.FormatBool(isBootNode), portBootNode, portBootNode, p2pPort, id, key)
+		coms = append(coms, configParams)
+	} else {
+		configParams = configParams + ";privacy.enable=true;privacy.ptmNode=%s"
+		configParams := fmt.Sprintf(configParams, strconv.FormatBool(isBootNode), portBootNode, portBootNode, p2pPort, id, key, ptmUrl)
+		coms = append(coms, configParams)
+	}
+	if seed != "" {
+		seed := fmt.Sprintf("--seed=%s", seed)
 		coms = append(coms, seed)
 	}
 	return "[\"" + strings.Join(coms, "\",\"") + "\"]"
@@ -226,4 +246,49 @@ func identityConfig() (string, string, error) {
 	}
 	peerID := id.Pretty()
 	return privKey, peerID, nil
+}
+
+func generateNum() int {
+	rand.Seed(time.Now().UnixNano())
+	randNum := rand.Intn(100)
+	return randNum
+}
+
+func toQLCNodes(params []NodeParam) []QlcNode {
+	nodes := make([]QlcNode, 0)
+	for _, param := range params {
+		account := new(types.Account)
+		if param.accountSeed != "" {
+			sByte, _ := hex.DecodeString(param.accountSeed)
+			seed, _ := types.BytesToSeed(sByte)
+			account, _ = seed.Account(0)
+		} else {
+			account = nil
+		}
+		node := QlcNode{
+			HTTPEndpoint:  fmt.Sprintf("http://127.0.0.1:%s", getPort(param.PortHttp)),
+			WSEndpoint:    fmt.Sprintf("http://127.0.0.1:%s", getPort(param.PortWs)),
+			ContainerName: param.ContainerName,
+			Account:       account,
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+func toPTMNodes(params []PtmParam) []PtmNode {
+	nodes := make([]PtmNode, 0)
+	for _, param := range params {
+		node := PtmNode{
+			EndPoint:      fmt.Sprintf("http://127.0.0.1:%s", getPort(param.Port2)),
+			ContainerName: param.ContainerName,
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+func getPort(value string) string {
+	vs := strings.Split(value, ":")
+	return vs[0]
 }

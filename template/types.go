@@ -1,5 +1,7 @@
 package template
 
+import "github.com/qlcchain/qlc-go-sdk/pkg/types"
+
 type NodeParam struct {
 	Name          string
 	Image         string
@@ -10,9 +12,10 @@ type NodeParam struct {
 	PortWs        string
 	Ipv4Address   string
 	Volumes       string
+	accountSeed   string
 }
 
-type PTMParam struct {
+type PtmParam struct {
 	Name          string
 	Image         string
 	ContainerName string
@@ -21,12 +24,17 @@ type PTMParam struct {
 	Port2         string
 	Ipv4Address   string
 	Volumes       string
+	cEndpoint     string
 }
 
 type QlcNode struct {
+	HTTPEndpoint  string
+	WSEndpoint    string
+	ContainerName string
+	Account       *types.Account
 }
 
 type PtmNode struct {
-	Url           string
+	EndPoint      string
 	ContainerName string
 }
